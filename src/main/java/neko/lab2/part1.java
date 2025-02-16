@@ -8,7 +8,8 @@ public class part1 {
 
         int rank = MPI.COMM_WORLD.Rank();
 
-        int ai = rank;
+        int ai;
+        ai = rank;
         int bi = (rank + 1) * 2;
 
         System.out.println("P" + rank + " (id=" + Thread.currentThread().getId()
