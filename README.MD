@@ -11,13 +11,13 @@ java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -cp ".\target\classes" neko.lab1.p
 
 ### LAB 2
 
-#### task1
+#### part1
 Обмен данными между процессами
 ```bash
 java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -cp ".\target\classes" neko.lab2.part1
 ```
 
-#### task2
+#### part2
 Сумма нечетных элементов вектора (вариант 1)
 - `-Dvector="5 5 -5"`: Входной вектор (только целые значения)
 ```bash
