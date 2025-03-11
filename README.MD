@@ -37,3 +37,19 @@ java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -Dvector="5 5 -5" -cp ".\target\cl
 ```bash
 java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -Dmatrix="-1 -2 3 4;-5 6 -7 0;9 -10 -11 1" -cp ".\target\classes" neko.lab3.part1
 ```
+
+
+### LAB 4
+
+#### part1
+Решить задание 2 из лабораторной работы 2 с применением коллективных функций
+```bash
+java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -Dvector="5 5 -5 3 4 -2 5 3 5 -9 2 4" -cp ".\target\classes" neko.lab4.part1
+```
+
+#### part2
+Решить задание 1 и 2 из лабораторной работы 3 с применением коллективных функций.
+- `-Dmatrix="-1 -2 3 4;-5 6 -7 0;9 -10 -11 1"`: Входная матрица (только целые значения)
+```bash
+java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -Dmatrix="-1 -2 3 4;-5 6 -7 0;9 -10 -11 1" -cp ".\target\classes" neko.lab4.part2
+```
