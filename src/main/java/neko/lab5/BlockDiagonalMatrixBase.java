@@ -2,21 +2,28 @@ package neko.lab5;
 
 import java.util.*;
 
-public class Base {
+public class BlockDiagonalMatrixBase {
     public static void main(String[] args) {
         int[][] matrix = {
-                {0, 0, 3, 0, 0},
-                {0, 0, 0, 4, 0},
-                {5, 0, 0, 0, 0},
-                {0, 6, 0, 0, 0},
-                {0, 0, 0, 0, 7}
+                {0, 0, 33, 0, 0, 0, 0, 0, 0, 0},
+                {0, 0, 0, 44, 0, 0, 0, 0, 0, 0},
+                {55, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+                {0, 96, 0, 0, 0, 0, 0, 0, 0, 0},
+                {0, 0, 0, 0, 77, 0, 0, 0, 0, 0},
+                {0, 0, 0, 0, 0, 0, 0, 0, 77, 0},
+                {0, 0, 0, 0, 0, 0, 0, 88, 0, 0},
+                {0, 0, 11, 0, 0, 0, 0, 0, 0, 0},
+                {0, 0, 0, 0, 22, 0, 0, 0, 0, 0},
+                {0, 0, 0, 0, 0, 0, 77, 0, 0, 0}
         };
 
         System.out.println("Исходная матрица:");
         printMatrix(matrix);
 
         long startTime = System.nanoTime();
+
         matrix = transformToBlockDiagonal(matrix);
+
         long endTime = System.nanoTime();
         long duration = endTime - startTime;
 
@@ -37,11 +44,13 @@ public class Base {
 
         for (int i = 0; i < n; i++) {
             if (rowLabels[i] == -1) {
+                System.out.println("Маркировка компонента связности с меткой " + label);
                 labelRowsAndCols(matrix, i, label, rowLabels, colLabels, rowMarked, colMarked);
                 label++;
             }
         }
 
+        System.out.println("Перестановка строк и столбцов");
         matrix = reorderMatrix(matrix, rowLabels, colLabels);
         return matrix;
     }
@@ -51,6 +60,7 @@ public class Base {
         queue.add(row);
         rowLabels[row] = label;
         rowMarked[row] = true;
+        System.out.println("  Строка " + row + " получает метку " + label);
 
         while (!queue.isEmpty()) {
             int r = queue.poll();
@@ -58,11 +68,13 @@ public class Base {
                 if (matrix[r][j] != 0 && !colMarked[j]) {
                     colLabels[j] = label;
                     colMarked[j] = true;
+                    System.out.println("  Столбец " + j + " получает метку " + label);
                     for (int i = 0; i < matrix.length; i++) {
                         if (matrix[i][j] != 0 && !rowMarked[i]) {
                             rowLabels[i] = label;
                             rowMarked[i] = true;
                             queue.add(i);
+                            System.out.println("  Строка " + i + " получает метку " + label);
                         }
                     }
                 }
@@ -89,6 +101,9 @@ public class Base {
                 newMatrix[i][j] = matrix[rowOrder[i]][colOrder[j]];
             }
         }
+
+        System.out.println("Новый порядок строк: " + Arrays.toString(rowOrder));
+        System.out.println("Новый порядок столбцов: " + Arrays.toString(colOrder));
 
         return newMatrix;
     }
