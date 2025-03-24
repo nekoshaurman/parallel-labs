@@ -1,152 +1,228 @@
 package neko.lab5;
 
-import mpi.*;
-import java.util.*;
+import mpi.MPI;
+import org.json.simple.parser.ParseException;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 
 public class BlockDiagonalMatrixParallel {
-    public static void main(String[] args) throws Exception {
-        MPI.Init(args);
-        int rank = MPI.COMM_WORLD.Rank();
-        int size = MPI.COMM_WORLD.Size();
 
-        int[][] matrix = {
-                {0, 0, 33, 0, 0, 0, 0, 0, 0, 0},
-                {0, 0, 0, 44, 0, 0, 0, 0, 0, 0},
-                {55, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-                {0, 96, 0, 0, 0, 0, 0, 0, 0, 0},
-                {0, 0, 0, 0, 77, 0, 0, 0, 0, 0},
-                {0, 0, 0, 0, 0, 0, 0, 0, 77, 0},
-                {0, 0, 0, 0, 0, 0, 0, 88, 0, 0},
-                {0, 0, 11, 0, 0, 0, 0, 0, 0, 0},
-                {0, 0, 0, 0, 22, 0, 0, 0, 0, 0},
-                {0, 0, 0, 0, 0, 0, 77, 0, 0, 0}
-        };
-
-        if (rank == 0) {
-            System.out.println("Исходная матрица:");
-            printMatrix(matrix);
-        }
-
-        long startTime = System.nanoTime();
-        matrix = transformToBlockDiagonal(matrix, rank, size);
-        long endTime = System.nanoTime();
-        long duration = endTime - startTime;
-
-        if (rank == 0) {
-            System.out.println("Матрица после преобразования:");
-            printMatrix(matrix);
-            System.out.println("Время выполнения: " + duration + " наносекунд");
-        }
-
-        MPI.Finalize();
+    // Method to read a matrix from a JSON file
+    static int[][] readMatrixFromJson(String filePath, String matrixKey) throws IOException, ParseException {
+        return BlockDiagonalMatrixBase.readMatrixFromJson(filePath, matrixKey);
     }
 
-    public static int[][] transformToBlockDiagonal(int[][] matrix, int rank, int size) {
-        int n = matrix.length;
-        boolean[] rowMarked = new boolean[n];
-        boolean[] colMarked = new boolean[n];
-        int[] rowLabels = new int[n];
-        int[] colLabels = new int[n];
-        Arrays.fill(rowLabels, -1);
-        Arrays.fill(colLabels, -1);
-        int label = 1;
-
-        // Каждый процесс маркирует свою часть строк
-        for (int i = rank; i < n; i += size) {
-            if (rowLabels[i] == -1) {
-                System.out.println("Процесс " + rank + " маркирует компонент связности с меткой " + label);
-                labelRowsAndCols(matrix, i, label, rowLabels, colLabels, rowMarked, colMarked, rank);
-                label++;
+    // Method to print the matrix
+    static void printMatrix(int[][] matrix) {
+        for (int[] row : matrix) {
+            for (int val : row) {
+                System.out.printf("%3d ", val); // Print each value with formatting
             }
+            System.out.println();
+        }
+    }
+
+    // Parallel algorithm to transform the matrix into block diagonal form
+    static void algorithm(int[][] matrix, boolean allLogs, int rank, int size) throws Exception {
+        int N = matrix.length;
+
+        // Broadcast the matrix data to all processes
+        if (rank != 0) {
+            matrix = new int[N][N]; // Initialize matrix for non-root processes
         }
 
-        MPI.COMM_WORLD.Barrier();
+        for (int i = 0; i < N; i++) {
+            MPI.COMM_WORLD.Bcast(matrix[i], 0, N, MPI.INT, 0); // Broadcast rows of the matrix
+        }
 
-        // Сбор всех меток строк и столбцов со всех процессов
-        int[] gatheredRowLabels = new int[n * size];
-        int[] gatheredColLabels = new int[n * size];
+        // Calculate the chunk size for each process
+        int chunkSize = N / size;
+        int remainder = N % size;
+        int start = rank * chunkSize + Math.min(rank, remainder); // Start index for this process
+        int end = start + chunkSize + (rank < remainder ? 1 : 0) - 1; // End index for this process
+        int localNum = end - start + 1; // Number of rows assigned to this process
 
-        MPI.COMM_WORLD.Allgather(rowLabels, 0, n, MPI.INT, gatheredRowLabels, 0, n, MPI.INT);
-        MPI.COMM_WORLD.Allgather(colLabels, 0, n, MPI.INT, gatheredColLabels, 0, n, MPI.INT);
+        // Build the adjacency list for the graph
+        List<List<Integer>> adjacencyList = new ArrayList<>(N);
+        for (int i = 0; i < N; i++) {
+            adjacencyList.add(new ArrayList<>());
+        }
 
-        // Объединяем результаты из всех процессов
-        for (int i = 0; i < n; i++) {
-            for (int p = 0; p < size; p++) {
-                if (gatheredRowLabels[p * n + i] != -1) {
-                    rowLabels[i] = gatheredRowLabels[p * n + i];
-                }
-                if (gatheredColLabels[p * n + i] != -1) {
-                    colLabels[i] = gatheredColLabels[p * n + i];
+        // Populate the adjacency list based on non-zero entries in the matrix
+        for (int i = start; i <= end; i++) {
+            for (int j = 0; j < N; j++) {
+                if (matrix[i][j] != 0 || matrix[j][i] != 0) {
+                    adjacencyList.get(i).add(j); // Add edges to the adjacency list
                 }
             }
         }
 
-        MPI.COMM_WORLD.Barrier();
-
-        if (rank == 0) {
-            matrix = reorderMatrix(matrix, rowLabels, colLabels);
+        // Initialize the global component array
+        int[] componentGlobal = new int[N];
+        for (int i = 0; i < N; i++) {
+            componentGlobal[i] = i; // Each vertex initially belongs to its own component
         }
 
-        return matrix;
-    }
+        // Prepare arrays for Allgatherv operation
+        int[] recvcounts = new int[size];
+        int[] displs = new int[size];
+        for (int r = 0; r < size; r++) {
+            int rChunk = N / size;
+            int rRemainder = N % size;
+            displs[r] = r * rChunk + Math.min(r, rRemainder); // Displacement for process r
+            recvcounts[r] = rChunk + (r < rRemainder ? 1 : 0); // Number of elements for process r
+        }
 
-    private static void labelRowsAndCols(int[][] matrix, int row, int label, int[] rowLabels, int[] colLabels, boolean[] rowMarked, boolean[] colMarked, int rank) {
-        Queue<Integer> queue = new LinkedList<>();
-        queue.add(row);
-        rowLabels[row] = label;
-        rowMarked[row] = true;
-        System.out.println("  [" + rank + "] Строка " + row + " получает метку " + label);
+        boolean changed;
+        do {
+            changed = false;
+            int[] componentNew = Arrays.copyOf(componentGlobal, N); // Copy the current component array
 
-        while (!queue.isEmpty()) {
-            int r = queue.poll();
-            for (int j = 0; j < matrix.length; j++) {
-                if (matrix[r][j] != 0 && !colMarked[j]) {
-                    colLabels[j] = label;
-                    colMarked[j] = true;
-                    System.out.println("  [" + rank + "] Столбец " + j + " получает метку " + label);
-                    for (int i = 0; i < matrix.length; i++) {
-                        if (matrix[i][j] != 0 && !rowMarked[i]) {
-                            rowLabels[i] = label;
-                            rowMarked[i] = true;
-                            queue.add(i);
-                            System.out.println("  [" + rank + "] Строка " + i + " получает метку " + label);
-                        }
+            // Update components for vertices assigned to this process
+            for (int i = start; i <= end; i++) {
+                int minComp = componentGlobal[i];
+                for (int neighbor : adjacencyList.get(i)) {
+                    if (componentGlobal[neighbor] < minComp) {
+                        minComp = componentGlobal[neighbor]; // Find the minimum component ID
                     }
                 }
+                if (minComp < componentNew[i]) {
+                    componentNew[i] = minComp; // Update the component ID
+                    changed = true; // Mark that a change occurred
+                }
+            }
+
+            // Gather updated components from all processes
+            int[] buffer = new int[N];
+            MPI.COMM_WORLD.Allgatherv(componentNew, start, localNum, MPI.INT, buffer, 0, recvcounts, displs, MPI.INT);
+
+            boolean globalChanged = false;
+            for (int i = 0; i < N; i++) {
+                if (buffer[i] < componentGlobal[i]) {
+                    componentGlobal[i] = buffer[i]; // Update the global component array
+                    globalChanged = true; // Mark that a global change occurred
+                }
+            }
+
+            // Check if any process detected a change
+            int[] changedArray = {globalChanged ? 1 : 0};
+            int[] result = new int[1];
+            MPI.COMM_WORLD.Allreduce(changedArray, 0, result, 0, 1, MPI.INT, MPI.BOR);
+            changed = changedArray[0] == 1;
+
+        } while (changed); // Repeat until no changes occur
+
+        // Root process sorts vertices by their component IDs
+        int[] permutation = new int[N];
+        if (rank == 0) {
+            for (int i = 0; i < N; i++) {
+                permutation[i] = i;
+            }
+            permutation = Arrays.stream(permutation)
+                    .boxed()
+                    .sorted(Comparator.comparingInt(a -> componentGlobal[a])) // Sort by component ID
+                    .mapToInt(i -> i)
+                    .toArray();
+        }
+
+        // Broadcast the permutation array to all processes
+        MPI.COMM_WORLD.Bcast(permutation, 0, N, MPI.INT, 0);
+
+        // Form the transformed matrix based on the sorted order of vertices
+        int[][] sortedMatrix = new int[N][N];
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                sortedMatrix[i][j] = matrix[permutation[i]][permutation[j]];
+            }
+        }
+
+        // Output results from the root process
+        if (rank == 0) {
+            System.out.print("\nVertex order for block diagonal form: ");
+            for (int idx : permutation) {
+                System.out.print(idx + " "); // Print the order of vertices
+            }
+            System.out.println();
+
+            if (allLogs) {
+                System.out.println("\nTransformed Matrix (Block Diagonal Form):");
+                printMatrix(sortedMatrix); // Print the transformed matrix
             }
         }
     }
 
-    private static int[][] reorderMatrix(int[][] matrix, int[] rowLabels, int[] colLabels) {
-        int n = matrix.length;
-        Integer[] rowOrder = new Integer[n];
-        Integer[] colOrder = new Integer[n];
+    public static void main(String[] args) throws Exception {
+        MPI.Init(args);
+        int rank = MPI.COMM_WORLD.Rank(); // Get the rank of the current process
+        int size = MPI.COMM_WORLD.Size(); // Get the total number of processes
 
-        for (int i = 0; i < n; i++) {
-            rowOrder[i] = i;
-            colOrder[i] = i;
-        }
+        boolean logs = false; // Set to true to enable detailed logs
 
-        Arrays.sort(rowOrder, Comparator.comparingInt(i -> rowLabels[i]));
-        Arrays.sort(colOrder, Comparator.comparingInt(i -> colLabels[i]));
+        // List of matrices to process
+        ArrayList<String> matrixList = new ArrayList<>();
+        matrixList.add("init_matrix");
+        matrixList.add("matrix6");
+        matrixList.add("matrix10");
+        matrixList.add("matrix25");
+        matrixList.add("matrix50");
+        matrixList.add("matrix100");
+        matrixList.add("matrix200");
+        matrixList.add("matrix300");
+        matrixList.add("matrix400");
 
-        int[][] newMatrix = new int[n][n];
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) {
-                newMatrix[i][j] = matrix[rowOrder[i]][colOrder[j]];
+        // Sizes of the matrices
+        ArrayList<Integer> matrixSizes = new ArrayList<>();
+        matrixSizes.add(6);
+        matrixSizes.add(6);
+        matrixSizes.add(10);
+        matrixSizes.add(25);
+        matrixSizes.add(50);
+        matrixSizes.add(100);
+        matrixSizes.add(200);
+        matrixSizes.add(300);
+        matrixSizes.add(400);
+
+        int[][] matrix;
+        String matrixName;
+        int matrixSize;
+
+        long startTime;
+        long endTime;
+        long duration;
+
+        // Process each matrix in the list
+        for (int i = 0; i < matrixList.size(); i++) {
+            matrixName = matrixList.get(i);
+            matrixSize = matrixSizes.get(i);
+
+            if (rank == 0) {
+                matrix = readMatrixFromJson("src/main/resources/test_matrix.json", matrixName);
+
+                if (logs) {
+                    System.out.println("[" + matrixName + "] Original Matrix:");
+                    printMatrix(matrix); // Print the original matrix
+                } else {
+                    System.out.print("[" + matrixName + "]");
+                }
+            } else {
+                matrix = new int[matrixSize][matrixSize]; // Initialize matrix for non-root processes
+            }
+
+            startTime = System.nanoTime(); // Start timing the algorithm
+
+            algorithm(matrix, logs, rank, size); // Run the parallel algorithm
+
+            endTime = System.nanoTime(); // End timing the algorithm
+            duration = (endTime - startTime) / 1000; // Calculate duration in microseconds
+
+            if (rank == 0) {
+                System.out.println("Execution Time: " + duration + " μs"); // Print the execution time
             }
         }
-
-        System.out.println("Новый порядок строк: " + Arrays.toString(rowOrder));
-        System.out.println("Новый порядок столбцов: " + Arrays.toString(colOrder));
-
-        return newMatrix;
-    }
-
-    private static void printMatrix(int[][] matrix) {
-        for (int[] row : matrix) {
-            System.out.println(Arrays.toString(row));
-        }
-        System.out.println();
+        MPI.Finalize(); // Finalize MPI
     }
 }
