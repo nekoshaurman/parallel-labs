@@ -53,3 +53,21 @@ java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -Dvector="5 5 -5 3 4 -2 5 3 5 -9 2
 ```bash
 java -jar ".\mpj-v0_44\lib\starter.jar" -np 4 -Dmatrix="-1 -2 3 4;-5 6 -7 0;9 -10 -11 1" -cp ".\target\classes" neko.lab4.part2
 ```
+
+### LAB 5
+
+Матрицы хранятся в файле test_matrix.json
+
+Есть возможность включить подробные логи в каждом из файлов (boolean logs = true/false)
+
+#### BlockDiagonalMatrixBase
+Последовательный алгоритм преобразования разреженной матрицы в блочно-диагональную
+```bash
+java -cp ".\json-simple\1.1\json-simple-1.1.jar;.\target\classes" neko.lab5.BlockDiagonalMatrixBase
+```
+
+#### BlockDiagonalMatrixParallel
+Параллельный алгоритм преобразования разреженной матрицы в блочно-диагональную
+```bash
+java -jar ".\mpj-v0_44\lib\starter.jar" -np 2 -cp ".\json-simple\1.1\json-simple-1.1.jar;.\target\classes" neko.lab5.BlockDiagonalMatrixParallel
+```
